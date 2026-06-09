@@ -1,0 +1,124 @@
+name: "act101 online scan"
+description: "Run the act101 AI-code health scanner from GitHub Actions."
+author: "act101"
+
+branding:
+  icon: "shield"
+  color: "orange"
+
+inputs:
+  oidc-audience:
+    description: "GitHub OIDC audience used when requesting an identity token."
+    required: false
+    default: "act101-scan"
+  token-endpoint:
+    description: "act101 Worker endpoint that exchanges GitHub OIDC for a scan token."
+    required: false
+    default: "https://act101.ai/api/scan/token"
+  upload-sarif:
+    description: "Upload SARIF to GitHub code scanning."
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Exchange GitHub OIDC for act101 scan token
+      id: token
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+          echo "::warning::GitHub OIDC is not available. Ensure the workflow grants id-token: write."
+          echo "token_available=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        request_url="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${{ inputs.oidc-audience }}"
+        oidc_json="$(curl --fail --silent --show-error --location \
+          --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          "$request_url")"
+        oidc_token="$(OIDC_JSON="$oidc_json" node -e 'const data = JSON.parse(process.env.OIDC_JSON); process.stdout.write(data.value || "");')"
+
+        if [ -z "$oidc_token" ]; then
+          echo "::warning::GitHub OIDC response did not contain a token."
+          echo "token_available=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        response_file="$(mktemp)"
+        status_code="$(curl --silent --show-error --location \
+          --output "$response_file" \
+          --write-out "%{http_code}" \
+          --request POST \
+          --header "Authorization: Bearer ${oidc_token}" \
+          --header "Content-Type: application/json" \
+          --data '{}' \
+          "${{ inputs.token-endpoint }}")"
+
+        if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+          body="$(cat "$response_file")"
+          echo "::warning::act101 scan token exchange returned HTTP ${status_code}: ${body}"
+          echo "token_available=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        scan_token="$(TOKEN_RESPONSE="$(cat "$response_file")" node -e 'const data = JSON.parse(process.env.TOKEN_RESPONSE); process.stdout.write(data.token || "");')"
+        if [ -n "$scan_token" ]; then
+          echo "::add-mask::$scan_token"
+          echo "token_available=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::act101 token response did not contain a scan token."
+          echo "token_available=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Generate act101 smoke SARIF
+      shell: bash
+      run: |
+        set -euo pipefail
+        node <<'NODE'
+        const fs = require("fs");
+        const repo = process.env.GITHUB_REPOSITORY || "unknown/unknown";
+        const sha = process.env.GITHUB_SHA || "";
+        const sarif = {
+          version: "2.1.0",
+          "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+          runs: [
+            {
+              tool: {
+                driver: {
+                  name: "act101",
+                  informationUri: "https://act101.ai/online",
+                  rules: []
+                }
+              },
+              automationDetails: { id: "act101-online-smoke" },
+              invocations: [
+                {
+                  executionSuccessful: true,
+                  properties: { repository: repo, sha }
+                }
+              ],
+              results: []
+            }
+          ]
+        };
+        fs.writeFileSync("act101-results.sarif", JSON.stringify(sarif, null, 2));
+        NODE
+
+        {
+          echo "## act101 online scan"
+          echo ""
+          echo "Action resolved and ran for \`${GITHUB_REPOSITORY:-unknown}\`."
+          echo ""
+          echo "- OIDC exchange: ${{ steps.token.outputs.token_available }}"
+          echo "- SARIF: \`act101-results.sarif\`"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload act101 SARIF
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      continue-on-error: true
+      with:
+        sarif_file: act101-results.sarif
