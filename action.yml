@@ -19,6 +19,10 @@ inputs:
     description: "Upload SARIF to GitHub code scanning."
     required: false
     default: "true"
+  act-command:
+    description: "Command used to run the act CLI."
+    required: false
+    default: "act"
 
 runs:
   using: "composite"
@@ -68,57 +72,68 @@ runs:
         if [ -n "$scan_token" ]; then
           echo "::add-mask::$scan_token"
           echo "token_available=true" >> "$GITHUB_OUTPUT"
+          echo "ACT_SCAN_TOKEN=$scan_token" >> "$GITHUB_ENV"
         else
           echo "::warning::act101 token response did not contain a scan token."
           echo "token_available=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Generate act101 smoke SARIF
+    - name: Run act101 scan and write report
+      id: report
       shell: bash
       run: |
         set -euo pipefail
-        node <<'NODE'
-        const fs = require("fs");
-        const repo = process.env.GITHUB_REPOSITORY || "unknown/unknown";
-        const sha = process.env.GITHUB_SHA || "";
-        const sarif = {
-          version: "2.1.0",
-          "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-          runs: [
-            {
-              tool: {
-                driver: {
-                  name: "act101",
-                  informationUri: "https://act101.ai/online",
-                  rules: []
-                }
-              },
-              automationDetails: { id: "act101-online-smoke" },
-              invocations: [
-                {
-                  executionSuccessful: true,
-                  properties: { repository: repo, sha }
-                }
-              ],
-              results: []
-            }
-          ]
-        };
-        fs.writeFileSync("act101-results.sarif", JSON.stringify(sarif, null, 2));
-        NODE
 
-        {
-          echo "## act101 online scan"
-          echo ""
-          echo "Action resolved and ran for \`${GITHUB_REPOSITORY:-unknown}\`."
-          echo ""
-          echo "- OIDC exchange: ${{ steps.token.outputs.token_available }}"
-          echo "- SARIF: \`act101-results.sarif\`"
-        } >> "$GITHUB_STEP_SUMMARY"
+        visibility="$(EVENT_PATH="${GITHUB_EVENT_PATH:-}" node -e 'const fs = require("fs"); const event = process.env.EVENT_PATH && fs.existsSync(process.env.EVENT_PATH) ? JSON.parse(fs.readFileSync(process.env.EVENT_PATH, "utf8")) : {}; process.stdout.write(event.repository && event.repository.private ? "private" : "public");')"
+
+        if command -v "${{ inputs.act-command }}" >/dev/null 2>&1; then
+          if "${{ inputs.act-command }}" scan --visibility "$visibility" --root . > act101-scan-raw.json 2> act101-scan.stderr && \
+             "${{ inputs.act-command }}" scan --visibility "$visibility" --root . --sarif > act101-results.sarif 2>> act101-scan.stderr; then
+            node "$GITHUB_ACTION_PATH/scripts/write-report.mjs" \
+              --input act101-scan-raw.json \
+              --out-dir act101-report \
+              --sarif-status pending
+            echo "scan_available=true" >> "$GITHUB_OUTPUT"
+          else
+            reason="$(cat act101-scan.stderr)"
+            node "$GITHUB_ACTION_PATH/scripts/local-scan.mjs" . > act101-scan-raw.json
+            node "$GITHUB_ACTION_PATH/scripts/write-report.mjs" \
+              --input act101-scan-raw.json \
+              --out-dir act101-report \
+              --sarif-status pending
+            node "$GITHUB_ACTION_PATH/scripts/write-sarif.mjs" act101-report.json act101-results.sarif
+            echo "::notice::The configured act CLI did not complete; used the bundled act101 launch scanner instead. ${reason}"
+            echo "scan_available=true" >> "$GITHUB_OUTPUT"
+          fi
+        else
+          node "$GITHUB_ACTION_PATH/scripts/local-scan.mjs" . > act101-scan-raw.json
+          node "$GITHUB_ACTION_PATH/scripts/write-report.mjs" \
+            --input act101-scan-raw.json \
+            --out-dir act101-report \
+            --sarif-status pending
+          node "$GITHUB_ACTION_PATH/scripts/write-sarif.mjs" act101-report.json act101-results.sarif
+          echo "scan_available=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Attach act101 report artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: act101-report
+        path: act101-report/
+        if-no-files-found: error
+
+    - name: Post act101 PR review comments
+      if: ${{ github.event_name == 'pull_request' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        node "$GITHUB_ACTION_PATH/scripts/post-pr-comments.mjs"
 
     - name: Check GitHub code scanning availability
       id: code-scanning
-      if: ${{ inputs.upload-sarif == 'true' }}
+      if: ${{ inputs.upload-sarif == 'true' && steps.report.outputs.scan_available == 'true' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -178,7 +193,7 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload act101 SARIF
-      if: ${{ inputs.upload-sarif == 'true' && steps.code-scanning.outputs.available == 'true' }}
+      if: ${{ inputs.upload-sarif == 'true' && steps.report.outputs.scan_available == 'true' && steps.code-scanning.outputs.available == 'true' }}
       uses: github/codeql-action/upload-sarif@v4
       continue-on-error: true
       with:

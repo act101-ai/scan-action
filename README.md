@@ -11,6 +11,11 @@ GitHub Action entrypoint for act101 online.
 ```
 
 The action requests a GitHub OIDC token, exchanges it with the act101 Worker,
-and emits SARIF for GitHub code scanning. If the repository is private and
-GitHub code scanning is not enabled, SARIF upload is skipped and the scan still
-completes.
+generates an agent-ready report artifact, and optionally emits SARIF for GitHub
+code scanning. PR runs can also leave inline review comments for line-specific
+findings when the workflow grants `pull-requests: write`.
+
+SARIF is a bonus integration. If the repository is private and GitHub code
+scanning is not enabled, SARIF upload is skipped and the scan still completes
+with `act101-report.md`, `act101-report.html`, and `act101-report.json`
+attached to the workflow run.
