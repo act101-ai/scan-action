@@ -111,9 +111,12 @@ runs:
             https://api.github.com/repos/act101-ai/act101/releases?per_page=20)"
           export ACT_VERSION="$(RELEASES_JSON="$releases_json" CHANNEL="$ACT_CHANNEL" node -e 'const releases = JSON.parse(process.env.RELEASES_JSON); const channel = process.env.CHANNEL || "stable"; const rel = releases.find((rel) => rel.prerelease && !rel.draft && rel.tag_name.includes(channel)); if (!rel) { process.stderr.write(`No ${channel} act release found\n`); process.exit(1); } process.stdout.write(rel.tag_name);')"
         fi
+        installer_url="https://github.com/act101-ai/act101/releases/download/${ACT_VERSION}/install.sh"
+        installer_path="$(mktemp)"
         curl --fail --silent --show-error --location \
-          https://raw.githubusercontent.com/act101-ai/act101/main/install.sh \
-          | sh
+          --output "$installer_path" \
+          "$installer_url"
+        sh "$installer_path"
         echo "$ACT_PREFIX" >> "$GITHUB_PATH"
         "$ACT_PREFIX/act" --version
 
