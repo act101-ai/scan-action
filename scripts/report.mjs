@@ -78,6 +78,58 @@ export function fallbackReport({ reason, repository, sha }) {
   });
 }
 
+function diagnosticMessage(diagnostic) {
+  if (typeof diagnostic === "string") return diagnostic;
+  return String(diagnostic?.message || diagnostic?.kind || "diagnostic");
+}
+
+function diagnosticFile(diagnostic) {
+  return diagnostic?.file ? String(diagnostic.file) : "";
+}
+
+function renderDiagnostics(lines, diagnostics) {
+  const excluded = diagnostics.filter((diagnostic) => diagnostic?.kind === "excluded_nonproduction");
+  const actionable = diagnostics.filter((diagnostic) => diagnostic?.kind !== "excluded_nonproduction");
+
+  if (actionable.length === 0 && excluded.length === 0) return;
+
+  lines.push("## Diagnostics", "");
+
+  if (actionable.length > 0) {
+    const seen = new Set();
+    for (const diagnostic of actionable) {
+      const message = diagnosticMessage(diagnostic);
+      const file = diagnosticFile(diagnostic);
+      const key = `${file}\0${message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`- ${file ? `\`${file}\`: ` : ""}${message}`);
+    }
+    lines.push("");
+  }
+
+  if (excluded.length > 0) {
+    const byReason = new Map();
+    for (const diagnostic of excluded) {
+      const reason = diagnosticMessage(diagnostic);
+      const entry = byReason.get(reason) || { count: 0, samples: [] };
+      entry.count += 1;
+      const file = diagnosticFile(diagnostic);
+      if (file && entry.samples.length < 3) entry.samples.push(file);
+      byReason.set(reason, entry);
+    }
+
+    lines.push(`Skipped non-production files: ${excluded.length}`, "");
+    for (const [reason, entry] of [...byReason.entries()].sort((a, b) => b[1].count - a[1].count)) {
+      const samples = entry.samples.length > 0
+        ? `; examples: ${entry.samples.map((sample) => `\`${sample}\``).join(", ")}`
+        : "";
+      lines.push(`- ${reason}: ${entry.count}${samples}`);
+    }
+    lines.push("");
+  }
+}
+
 export function renderMarkdown(report, context = {}) {
   const repo = context.repository || "unknown/unknown";
   const sha = context.sha || "unknown";
@@ -131,13 +183,7 @@ export function renderMarkdown(report, context = {}) {
     "",
   );
 
-  if (report.diagnostics.length > 0) {
-    lines.push("## Diagnostics", "");
-    for (const diagnostic of report.diagnostics) {
-      lines.push(`- ${diagnostic.message}`);
-    }
-    lines.push("");
-  }
+  renderDiagnostics(lines, report.diagnostics);
 
   return `${lines.join("\n").trim()}\n`;
 }

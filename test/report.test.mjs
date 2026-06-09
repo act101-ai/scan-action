@@ -58,6 +58,29 @@ test("renderSummary links the attached report and keeps SARIF as optional", () =
   assert.match(summary, /code scanning is not enabled/);
 });
 
+test("renderMarkdown collapses repeated non-production diagnostics", () => {
+  const report = normalizeReport({
+    score: { overall: 90, security: 100, architecture: 80 },
+    findings: [],
+    diagnostics: [
+      { kind: "excluded_nonproduction", file: "docs/a.md", message: "path_segment:docs" },
+      { kind: "excluded_nonproduction", file: "docs/b.md", message: "path_segment:docs" },
+      { kind: "excluded_nonproduction", file: "tests/a.test.ts", message: "path_segment:tests" },
+      { kind: "excluded_nonproduction", file: "README.md", message: "extension:documentation" },
+      { kind: "ledger_invalid", file: ".act/refuted.json", message: "invalid refuted ledger" },
+    ],
+  });
+
+  const markdown = renderMarkdown(report);
+
+  assert.match(markdown, /## Diagnostics/);
+  assert.match(markdown, /Skipped non-production files: 4/);
+  assert.match(markdown, /path_segment:docs: 2; examples: `docs\/a.md`, `docs\/b.md`/);
+  assert.match(markdown, /path_segment:tests: 1; examples: `tests\/a.test.ts`/);
+  assert.match(markdown, /`.act\/refuted.json`: invalid refuted ledger/);
+  assert.doesNotMatch(markdown, /- path_segment:docs\n- path_segment:docs/);
+});
+
 test("commentsForPullRequest creates one inline review comment per finding", () => {
   const report = normalizeReport({
     findings: [
