@@ -8,14 +8,15 @@ test("action installs the latest beta act CLI before scanning", () => {
   assert.match(action, /act-channel:/);
   assert.match(action, /default: "beta"/);
   assert.match(action, /Install act CLI/);
-  assert.match(action, /installer_url="https:\/\/github\.com\/act101-ai\/act101\/releases\/download\/\$\{ACT_VERSION\}\/install\.sh"/);
   assert.match(action, /ACT_CHANNEL: \${{ inputs\.act-channel }}/);
   assert.match(action, /ACT_PREFIX: \${{ runner\.temp }}\/act101\/bin/);
   assert.match(action, /repos\/act101-ai\/act101\/releases\?per_page=20/);
   assert.match(action, /--output "\$releases_file"/);
+  assert.match(action, /target="x86_64-unknown-linux-gnu"/);
+  assert.match(action, /archive_url="https:\/\/github\.com\/act101-ai\/act101\/releases\/download\/\$\{ACT_VERSION\}\/act-\$\{target\}\.tar\.gz"/);
   assert.match(action, /rel\.prerelease && !rel\.draft && rel\.tag_name\.includes\(channel\)/);
   assert.match(action, /export ACT_VERSION/);
-  assert.match(action, /sh "\$installer_path"/);
+  assert.match(action, /tar -xzf "\$archive_path" -C "\$ACT_PREFIX"/);
   assert.match(action, /\$ACT_PREFIX\/act" --version/);
   assert.match(action, />> "\$GITHUB_PATH"/);
 });
