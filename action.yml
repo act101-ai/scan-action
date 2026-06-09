@@ -107,9 +107,11 @@ runs:
 
         mkdir -p "$ACT_PREFIX"
         if [ -z "${ACT_VERSION:-}" ]; then
-          releases_json="$(curl --fail --silent --show-error --location \
-            https://api.github.com/repos/act101-ai/act101/releases?per_page=20)"
-          export ACT_VERSION="$(RELEASES_JSON="$releases_json" CHANNEL="$ACT_CHANNEL" node -e 'const releases = JSON.parse(process.env.RELEASES_JSON); const channel = process.env.CHANNEL || "stable"; const rel = releases.find((rel) => rel.prerelease && !rel.draft && rel.tag_name.includes(channel)); if (!rel) { process.stderr.write(`No ${channel} act release found\n`); process.exit(1); } process.stdout.write(rel.tag_name);')"
+          releases_file="$(mktemp)"
+          curl --fail --silent --show-error --location \
+            --output "$releases_file" \
+            https://api.github.com/repos/act101-ai/act101/releases?per_page=20
+          export ACT_VERSION="$(CHANNEL="$ACT_CHANNEL" node -e 'const fs = require("fs"); const releases = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const channel = process.env.CHANNEL || "stable"; const rel = releases.find((rel) => rel.prerelease && !rel.draft && rel.tag_name.includes(channel)); if (!rel) { process.stderr.write(`No ${channel} act release found\n`); process.exit(1); } process.stdout.write(rel.tag_name);' "$releases_file")"
         fi
         installer_url="https://github.com/act101-ai/act101/releases/download/${ACT_VERSION}/install.sh"
         installer_path="$(mktemp)"

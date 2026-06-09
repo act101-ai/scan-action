@@ -12,6 +12,7 @@ test("action installs the latest beta act CLI before scanning", () => {
   assert.match(action, /ACT_CHANNEL: \${{ inputs\.act-channel }}/);
   assert.match(action, /ACT_PREFIX: \${{ runner\.temp }}\/act101\/bin/);
   assert.match(action, /repos\/act101-ai\/act101\/releases\?per_page=20/);
+  assert.match(action, /--output "\$releases_file"/);
   assert.match(action, /rel\.prerelease && !rel\.draft && rel\.tag_name\.includes\(channel\)/);
   assert.match(action, /export ACT_VERSION/);
   assert.match(action, /sh "\$installer_path"/);
