@@ -19,6 +19,18 @@ inputs:
     description: "Upload SARIF to GitHub code scanning."
     required: false
     default: "true"
+  install-act:
+    description: "Install the act CLI before scanning."
+    required: false
+    default: "true"
+  act-channel:
+    description: "act CLI release channel to install when install-act is true."
+    required: false
+    default: "beta"
+  act-version:
+    description: "Optional act CLI version tag to install instead of resolving the channel."
+    required: false
+    default: ""
   act-command:
     description: "Command used to run the act CLI."
     required: false
@@ -77,6 +89,33 @@ runs:
           echo "::warning::act101 token response did not contain a scan token."
           echo "token_available=false" >> "$GITHUB_OUTPUT"
         fi
+
+    - name: Install act CLI
+      if: ${{ inputs.install-act == 'true' }}
+      shell: bash
+      env:
+        ACT_CHANNEL: ${{ inputs.act-channel }}
+        ACT_VERSION: ${{ inputs.act-version }}
+        ACT_ACCEPT_TOS: yes
+        ACT_ENABLE_DAEMON: no
+        ACT_AUTO_START: no
+        ACT_INSTALL_CLAUDE_PLUGIN: no
+        ACT_NON_INTERACTIVE: "1"
+        ACT_PREFIX: ${{ runner.temp }}/act101/bin
+      run: |
+        set -euo pipefail
+
+        mkdir -p "$ACT_PREFIX"
+        if [ -z "${ACT_VERSION:-}" ]; then
+          releases_json="$(curl --fail --silent --show-error --location \
+            https://api.github.com/repos/act101-ai/act101/releases?per_page=20)"
+          export ACT_VERSION="$(RELEASES_JSON="$releases_json" CHANNEL="$ACT_CHANNEL" node -e 'const releases = JSON.parse(process.env.RELEASES_JSON); const channel = process.env.CHANNEL || "stable"; const rel = releases.find((rel) => rel.prerelease && !rel.draft && rel.tag_name.includes(channel)); if (!rel) { process.stderr.write(`No ${channel} act release found\n`); process.exit(1); } process.stdout.write(rel.tag_name);')"
+        fi
+        curl --fail --silent --show-error --location \
+          https://raw.githubusercontent.com/act101-ai/act101/main/install.sh \
+          | sh
+        echo "$ACT_PREFIX" >> "$GITHUB_PATH"
+        "$ACT_PREFIX/act" --version
 
     - name: Run act101 scan and write report
       id: report
