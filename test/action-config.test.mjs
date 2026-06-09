@@ -18,7 +18,7 @@ test("action installs the latest beta act CLI before scanning", () => {
   assert.match(action, /export ACT_VERSION/);
   assert.match(action, /tar -xzf "\$archive_path" -C "\$ACT_PREFIX"/);
   assert.match(action, /\$ACT_PREFIX\/act" --version/);
-  assert.match(action, /\$ACT_PREFIX\/act" tos accept/);
+  assert.match(action, /\$ACT_PREFIX\/act" tos accept --yes/);
   assert.match(action, />> "\$GITHUB_PATH"/);
 });
 

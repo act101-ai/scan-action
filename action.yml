@@ -131,7 +131,7 @@ runs:
         chmod +x "$ACT_PREFIX/act"
         echo "$ACT_PREFIX" >> "$GITHUB_PATH"
         "$ACT_PREFIX/act" --version
-        "$ACT_PREFIX/act" tos accept
+        "$ACT_PREFIX/act" tos accept --yes
 
     - name: Run act101 scan and write report
       id: report
