@@ -11,4 +11,6 @@ GitHub Action entrypoint for act101 online.
 ```
 
 The action requests a GitHub OIDC token, exchanges it with the act101 Worker,
-and emits SARIF for GitHub code scanning.
+and emits SARIF for GitHub code scanning. If the repository is private and
+GitHub code scanning is not enabled, SARIF upload is skipped and the scan still
+completes.
