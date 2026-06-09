@@ -18,3 +18,10 @@ test("action installs the latest beta act CLI before scanning", () => {
   assert.match(action, /\$ACT_PREFIX\/act" --version/);
   assert.match(action, />> "\$GITHUB_PATH"/);
 });
+
+test("SARIF upload is optional by default", () => {
+  assert.match(action, /upload-sarif:[\s\S]*default: "false"/);
+  assert.match(action, /sarif_status="not requested"/);
+  assert.match(action, /if \[ "\${{ inputs\.upload-sarif }}" = "true" \]/);
+  assert.match(action, /uses: github\/codeql-action\/upload-sarif@v4/);
+});

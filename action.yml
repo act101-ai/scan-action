@@ -16,9 +16,9 @@ inputs:
     required: false
     default: "https://act101.ai/api/scan/token"
   upload-sarif:
-    description: "Upload SARIF to GitHub code scanning."
+    description: "Upload SARIF to GitHub code scanning when available. This is optional and usually requires GitHub Advanced Security on private repositories."
     required: false
-    default: "true"
+    default: "false"
   install-act:
     description: "Install the act CLI before scanning."
     required: false
@@ -127,6 +127,10 @@ runs:
         set -euo pipefail
 
         visibility="$(EVENT_PATH="${GITHUB_EVENT_PATH:-}" node -e 'const fs = require("fs"); const event = process.env.EVENT_PATH && fs.existsSync(process.env.EVENT_PATH) ? JSON.parse(fs.readFileSync(process.env.EVENT_PATH, "utf8")) : {}; process.stdout.write(event.repository && event.repository.private ? "private" : "public");')"
+        sarif_status="not requested"
+        if [ "${{ inputs.upload-sarif }}" = "true" ]; then
+          sarif_status="requested"
+        fi
 
         if command -v "${{ inputs.act-command }}" >/dev/null 2>&1; then
           if "${{ inputs.act-command }}" scan --visibility "$visibility" --root . > act101-scan-raw.json 2> act101-scan.stderr && \
@@ -134,7 +138,7 @@ runs:
             node "$GITHUB_ACTION_PATH/scripts/write-report.mjs" \
               --input act101-scan-raw.json \
               --out-dir act101-report \
-              --sarif-status pending
+              --sarif-status "$sarif_status"
             echo "scan_available=true" >> "$GITHUB_OUTPUT"
           else
             reason="$(cat act101-scan.stderr)"
@@ -142,7 +146,7 @@ runs:
             node "$GITHUB_ACTION_PATH/scripts/write-report.mjs" \
               --input act101-scan-raw.json \
               --out-dir act101-report \
-              --sarif-status pending
+              --sarif-status "$sarif_status"
             node "$GITHUB_ACTION_PATH/scripts/write-sarif.mjs" act101-report.json act101-results.sarif
             echo "::notice::The configured act CLI did not complete; used the bundled act101 launch scanner instead. ${reason}"
             echo "scan_available=true" >> "$GITHUB_OUTPUT"
@@ -152,7 +156,7 @@ runs:
           node "$GITHUB_ACTION_PATH/scripts/write-report.mjs" \
             --input act101-scan-raw.json \
             --out-dir act101-report \
-            --sarif-status pending
+            --sarif-status "$sarif_status"
           node "$GITHUB_ACTION_PATH/scripts/write-sarif.mjs" act101-report.json act101-results.sarif
           echo "scan_available=true" >> "$GITHUB_OUTPUT"
         fi

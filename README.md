@@ -7,7 +7,6 @@ GitHub Action entrypoint for act101 online.
   with:
     oidc-audience: act101-scan
     token-endpoint: https://act101.ai/api/scan/token
-    upload-sarif: "true"
     act-channel: beta
 ```
 
@@ -17,7 +16,7 @@ report artifact, and optionally emits SARIF for GitHub code scanning. PR runs ca
 also leave inline review comments for line-specific findings when the workflow
 grants `pull-requests: write`.
 
-SARIF is a bonus integration. If the repository is private and GitHub code
-scanning is not enabled, SARIF upload is skipped and the scan still completes
-with `act101-report.md`, `act101-report.html`, and `act101-report.json`
-attached to the workflow run.
+SARIF is a bonus integration. The default path writes the workflow summary and
+attaches `act101-report.md`, `act101-report.html`, and `act101-report.json`.
+Set `upload-sarif: "true"` when GitHub code scanning is enabled; private
+repositories usually need GitHub Advanced Security for that upload path.
