@@ -35,6 +35,10 @@ inputs:
     description: "Command used to run the act CLI."
     required: false
     default: "act"
+  pr-comment:
+    description: "PR comment behavior on pull_request events: sticky (one marker-keyed comment, updated in place), inline (legacy per-finding review comments), or off."
+    required: false
+    default: "sticky"
 
 runs:
   using: "composite"
@@ -111,7 +115,7 @@ runs:
           curl --fail --silent --show-error --location \
             --output "$releases_file" \
             https://api.github.com/repos/act101-ai/act101/releases?per_page=20
-          export ACT_VERSION="$(CHANNEL="$ACT_CHANNEL" node -e 'const fs = require("fs"); const releases = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const channel = process.env.CHANNEL || "stable"; const rel = releases.find((rel) => rel.prerelease && !rel.draft && rel.tag_name.includes(channel)); if (!rel) { process.stderr.write(`No ${channel} act release found\n`); process.exit(1); } process.stdout.write(rel.tag_name);' "$releases_file")"
+          export ACT_VERSION="$(CHANNEL="$ACT_CHANNEL" node -e 'const fs = require("fs"); const releases = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const channel = process.env.CHANNEL || "stable"; const rel = releases.find((rel) => !rel.draft && (channel === "stable" ? !rel.prerelease : (rel.prerelease && rel.tag_name.includes(channel)))); if (!rel) { process.stderr.write(`No ${channel} act release found\n`); process.exit(1); } process.stdout.write(rel.tag_name);' "$releases_file")"
         fi
         os="$(uname -s)"
         arch="$(uname -m)"
@@ -132,6 +136,56 @@ runs:
         echo "$ACT_PREFIX" >> "$GITHUB_PATH"
         "$ACT_PREFIX/act" --version
         "$ACT_PREFIX/act" tos accept --yes
+
+    - name: Run diff-scoped act101 PR scan
+      id: pr-scan
+      if: ${{ github.event_name == 'pull_request' && inputs.pr-comment != 'off' }}
+      shell: bash
+      env:
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+      run: |
+        set -euo pipefail
+
+        visibility="$(EVENT_PATH="${GITHUB_EVENT_PATH:-}" node -e 'const fs = require("fs"); const event = process.env.EVENT_PATH && fs.existsSync(process.env.EVENT_PATH) ? JSON.parse(fs.readFileSync(process.env.EVENT_PATH, "utf8")) : {}; process.stdout.write(event.repository && event.repository.private ? "private" : "public");')"
+
+        # Capability detection: diff-scoped scan flags exist only in newer CLI releases.
+        capable=false
+        if command -v "${{ inputs.act-command }}" >/dev/null 2>&1; then
+          if "${{ inputs.act-command }}" scan --help 2>/dev/null | grep -q -- "--base-ref" && \
+             "${{ inputs.act-command }}" scan --help 2>/dev/null | grep -q -- "--format"; then
+            capable=true
+          else
+            echo "::notice::Installed act CLI predates diff-scoped scans; posting a full-scan report instead."
+          fi
+        else
+          echo "::notice::act CLI is not available; posting a full-scan report instead."
+        fi
+
+        if [ "$capable" != "true" ]; then
+          echo "conclusion=success" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        git fetch --no-tags origin "$BASE_REF" || \
+          echo "::notice::Could not fetch base ref ${BASE_REF}; the diff-scoped scan may not find a merge base."
+
+        args=(scan --visibility "$visibility" --root . --base-ref "origin/${BASE_REF}" --format markdown)
+        if [ -f .act/baseline.json ]; then
+          args+=(--baseline .act/baseline.json)
+        fi
+        set +e
+        "${{ inputs.act-command }}" "${args[@]}" > act101-comment.md 2> act101-pr-scan.stderr
+        scan_exit=$?
+        set -e
+        case "$scan_exit" in
+          0) echo "conclusion=success" >> "$GITHUB_OUTPUT" ;;
+          1) echo "conclusion=failure" >> "$GITHUB_OUTPUT" ;;
+          *)
+            echo "::notice::Diff-scoped scan could not run (exit ${scan_exit}): $(head -3 act101-pr-scan.stderr | tr '\n' ' '). Falling back to the full-scan report."
+            rm -f act101-comment.md
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+            ;;
+        esac
 
     - name: Run act101 scan and write report
       id: report
@@ -181,14 +235,30 @@ runs:
         path: act101-report/
         if-no-files-found: error
 
-    - name: Post act101 PR review comments
-      if: ${{ github.event_name == 'pull_request' }}
+    - name: Post act101 sticky PR comment
+      if: ${{ github.event_name == 'pull_request' && inputs.pr-comment == 'sticky' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        node "$GITHUB_ACTION_PATH/scripts/sticky-comment.mjs"
+
+    - name: Post act101 PR review comments (legacy inline mode)
+      if: ${{ github.event_name == 'pull_request' && inputs.pr-comment == 'inline' }}
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         node "$GITHUB_ACTION_PATH/scripts/post-pr-comments.mjs"
+
+    - name: Enforce scan gate conclusion
+      if: ${{ github.event_name == 'pull_request' && steps.pr-scan.outputs.conclusion == 'failure' }}
+      shell: bash
+      run: |
+        echo "::error::act101 scan gate failed — new findings vs the committed baseline (see the PR comment)."
+        exit 1
 
     - name: Check GitHub code scanning availability
       id: code-scanning
