@@ -3,11 +3,17 @@
 GitHub Action entrypoint for act101 online.
 
 ```yaml
-- uses: act101-ai/scan-action@v1
-  with:
-    oidc-audience: act101-scan
-    token-endpoint: https://act101.ai/api/scan/token
-    act-channel: beta
+permissions:
+  contents: read
+  id-token: write        # OIDC exchange with the act101 Worker
+  pull-requests: write   # sticky/inline PR comments
+
+steps:
+  - uses: act101-ai/scan-action@v1
+    with:
+      oidc-audience: act101-scan
+      token-endpoint: https://act101.ai/api/scan/token
+      act-channel: beta
 ```
 
 The action requests a GitHub OIDC token, exchanges it with the act101 Worker,
@@ -21,6 +27,10 @@ On `pull_request` events the action maintains one sticky comment: it is keyed
 by a hidden marker and updated in place on every push, so a PR never collects
 one comment per run. The `pr-comment` input controls the behavior — `sticky`
 (default), `inline` (the legacy per-finding review comments), or `off`.
+
+On pull requests from forks the `github.token` is read-only regardless of the
+workflow's `permissions` block, so the comment cannot be posted; the action
+logs a warning and continues, and the scan gate still applies.
 
 When the installed act CLI supports diff-scoped scans (`--base-ref` and
 `--format`), the comment reports only what the PR changed, measured against the

@@ -120,5 +120,11 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await main();
+  try {
+    await main();
+  } catch (error) {
+    // The comment is additive; a network failure posting it must not fail the check.
+    console.log(`::warning::act101 sticky comment failed: ${error?.message || error}`);
+    process.exit(0);
+  }
 }
