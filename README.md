@@ -13,7 +13,6 @@ steps:
     with:
       oidc-audience: act101-scan
       token-endpoint: https://act101.ai/api/scan/token
-      act-channel: beta
 ```
 
 The action requests a GitHub OIDC token, exchanges it with the act101 Worker,

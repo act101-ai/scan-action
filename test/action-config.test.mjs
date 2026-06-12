@@ -4,9 +4,9 @@ import test from "node:test";
 
 const action = fs.readFileSync(new URL("../action.yml", import.meta.url), "utf8");
 
-test("action installs the latest beta act CLI before scanning", () => {
+test("action installs the latest stable act CLI by default", () => {
   assert.match(action, /act-channel:/);
-  assert.match(action, /default: "beta"/);
+  assert.match(action, /default: "stable"/);
   assert.match(action, /Install act CLI/);
   assert.match(action, /ACT_CHANNEL: \${{ inputs\.act-channel }}/);
   assert.match(action, /ACT_PREFIX: \${{ runner\.temp }}\/act101\/bin/);
