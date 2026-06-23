@@ -47,6 +47,10 @@ inputs:
     description: "Post the public-repo full-scan score to the act101 leaderboard ingest (POST /api/scan/counter). Set arena: false to opt a repo out of the boards (its own score-history chart is still kept). Only fires on pull_request or push to the default branch, for public repos, with a finite published score, and when the GitHub-OIDC scan token path is in use (license-key scans never post)."
     required: false
     default: "true"
+  gate-fail-on:
+    description: "Which act gate verdicts fail the check on pull_request: 'review' (fail on BLOCK and REVIEW, the default) or 'block' (fail on BLOCK only; REVIEW posts a ::notice and passes). MERGE always passes; UNKNOWN and exec-error are always non-fatal."
+    required: false
+    default: "review"
 
 runs:
   using: "composite"
@@ -282,6 +286,77 @@ runs:
       run: |
         set -euo pipefail
         node "$GITHUB_ACTION_PATH/scripts/post-pr-comments.mjs"
+
+    - name: Run act gate (authoritative safe-to-merge verdict)
+      id: act-gate
+      if: ${{ github.event_name == 'pull_request' }}
+      shell: bash
+      env:
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+        GATE_FAIL_ON: ${{ inputs.gate-fail-on }}
+      run: |
+        set -uo pipefail
+
+        # Capability detection: act gate and its --base-ref flag exist only in
+        # newer CLI releases. Predates gate → skip (the scan-exit conclusion
+        # below remains the fallback).
+        if ! command -v "${{ inputs.act-command }}" >/dev/null 2>&1; then
+          echo "gate_available=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::act CLI is not installed; skipping act gate."
+          exit 0
+        fi
+        if ! "${{ inputs.act-command }}" gate --help 2>/dev/null | grep -q -- "--base-ref"; then
+          echo "gate_available=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Installed act CLI predates 'act gate'; skipping the gate verdict."
+          exit 0
+        fi
+        echo "gate_available=true" >> "$GITHUB_OUTPUT"
+
+        # The base ref must be present locally for merge-base(<base>, HEAD).
+        git fetch --no-tags origin "$BASE_REF" || \
+          echo "::notice::Could not fetch base ref ${BASE_REF}; act gate may fall back to the working-tree scope."
+
+        # act gate exit contract (commands/gate.rs exit_code_for + main.rs Err arm):
+        #   0 MERGE / 1 BLOCK / 2 REVIEW / 3 UNKNOWN / 4 exec-error
+        fail_on="${GATE_FAIL_ON:-review}"
+        set +e
+        "${{ inputs.act-command }}" gate --base-ref "origin/${BASE_REF}" --format json > act101-gate.json 2> act101-gate.stderr
+        gate_exit=$?
+        set -e
+
+        case "$gate_exit" in
+          0)
+            echo "verdict=merge" >> "$GITHUB_OUTPUT"
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+            echo "act gate: MERGE — no changed function needs review."
+            ;;
+          1)
+            echo "verdict=block" >> "$GITHUB_OUTPUT"
+            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
+            echo "::error::act gate: BLOCK — one or more changed functions failed verification. See act101-gate.json."
+            exit 1
+            ;;
+          2)
+            echo "verdict=review" >> "$GITHUB_OUTPUT"
+            if [ "$fail_on" = "review" ]; then
+              echo "conclusion=failure" >> "$GITHUB_OUTPUT"
+              echo "::error::act gate: REVIEW — a changed function needs human review (gate-fail-on=review). See act101-gate.json."
+              exit 1
+            fi
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+            echo "::notice::act gate: REVIEW — a changed function needs human review (gate-fail-on=${fail_on}, non-fatal)."
+            ;;
+          3)
+            echo "verdict=unknown" >> "$GITHUB_OUTPUT"
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+            echo "::notice::act gate returned UNKNOWN (tier-blocked or undecidable); treated as non-fatal. See act101-gate.json."
+            ;;
+          *)
+            echo "verdict=error" >> "$GITHUB_OUTPUT"
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+            echo "::notice::act gate could not run (exit ${gate_exit}): $(head -3 act101-gate.stderr | tr '\n' ' '). Treated as non-fatal."
+            ;;
+        esac
 
     - name: Enforce scan gate conclusion
       if: ${{ github.event_name == 'pull_request' && steps.pr-scan.outputs.conclusion == 'failure' }}

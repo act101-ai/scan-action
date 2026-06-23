@@ -88,3 +88,36 @@ test("arena input defaults on and gates the leaderboard counter step", () => {
     "the counter step must come after the report step",
   );
 });
+
+test("act gate step maps the 0/1/2/3/4 exit contract onto the check conclusion", () => {
+  // A gate-fail-on input is declared and defaults to "review".
+  assert.match(action, /gate-fail-on:[\s\S]*?default: "review"/);
+
+  // The step runs only on pull_request events and capability-detects the verb.
+  assert.match(action, /id: act-gate/);
+  assert.match(action, /if: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+  assert.match(action, /"\$\{{ inputs\.act-command }}" gate --help 2>\/dev\/null \| grep -q -- "--base-ref"/);
+  assert.match(action, /gate --base-ref "origin\/\$\{BASE_REF\}" --format json/);
+
+  // Exit-code mapping (commands/gate.rs exit_code_for + main.rs Err arm):
+  //   0 MERGE passes, 1 BLOCK fails the step, 2 REVIEW fails only when
+  //   gate-fail-on=review, 3 UNKNOWN non-fatal, anything else (exec-error)
+  //   non-fatal. Each branch must be present and distinct.
+  assert.match(action, /verdict=merge[\s\S]*conclusion=success/);
+  assert.match(action, /verdict=block[\s\S]*conclusion=failure[\s\S]*exit 1/);
+  assert.match(
+    action,
+    /verdict=review[\s\S]*if \[ "\$fail_on" = "review" \][\s\S]*conclusion=failure[\s\S]*exit 1/,
+  );
+  assert.match(action, /verdict=review[\s\S]*conclusion=success[\s\S]*gate-fail-on=\$\{fail_on\}, non-fatal/);
+  assert.match(action, /verdict=unknown[\s\S]*conclusion=success[\s\S]*non-fatal/);
+  assert.match(action, /verdict=error[\s\S]*conclusion=success[\s\S]*non-fatal/);
+
+  // The act gate step precedes the legacy scan-exit conclusion; the scan-exit
+  // gate (E4) stays as the comment/report backstop.
+  assert.ok(
+    action.indexOf("id: act-gate") <
+      action.indexOf("Enforce scan gate conclusion"),
+    "the act gate step must run before the legacy scan-exit conclusion",
+  );
+});
