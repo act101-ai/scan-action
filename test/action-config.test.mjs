@@ -45,3 +45,14 @@ test("SARIF upload is optional by default", () => {
   assert.match(action, /if \[ "\${{ inputs\.upload-sarif }}" = "true" \]/);
   assert.match(action, /uses: github\/codeql-action\/upload-sarif@v4/);
 });
+
+test("license-key input entitles the scan instead of the OIDC scan token", () => {
+  // A license-key input is declared and defaults to empty (opt-in via secret).
+  assert.match(action, /license-key:[\s\S]*?default: ""/);
+  // The GitHub-OIDC scan-token exchange is skipped when a license key is
+  // present — the license, not the JWT, entitles the scan.
+  assert.match(action, /if: \$\{\{ inputs\.license-key == '' \}\}/);
+  // Both scan-running steps (diff-scoped PR scan + full report) receive the key
+  // as ACT_LICENSE_KEY for the CLI gate to consume.
+  assert.match(action, /ACT_LICENSE_KEY: \$\{\{ inputs\.license-key \}\}/);
+});

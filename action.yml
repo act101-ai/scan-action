@@ -39,12 +39,17 @@ inputs:
     description: "PR comment behavior on pull_request events: sticky (one marker-keyed comment, updated in place), inline (legacy per-finding review comments), or off."
     required: false
     default: "sticky"
+  license-key:
+    description: "Optional act101 license key (e.g. an Ultimate/Enterprise signed key). When set, the scan is entitled by the license instead of the GitHub-OIDC scan token. Provide via a secret."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
   steps:
     - name: Exchange GitHub OIDC for act101 scan token
       id: token
+      if: ${{ inputs.license-key == '' }}
       shell: bash
       run: |
         set -euo pipefail
@@ -143,6 +148,7 @@ runs:
       shell: bash
       env:
         BASE_REF: ${{ github.event.pull_request.base.ref }}
+        ACT_LICENSE_KEY: ${{ inputs.license-key }}
       run: |
         set -euo pipefail
 
@@ -190,6 +196,8 @@ runs:
     - name: Run act101 scan and write report
       id: report
       shell: bash
+      env:
+        ACT_LICENSE_KEY: ${{ inputs.license-key }}
       run: |
         set -euo pipefail
 
