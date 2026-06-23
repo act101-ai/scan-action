@@ -43,6 +43,10 @@ inputs:
     description: "Optional act101 license key (e.g. an Ultimate/Enterprise signed key). When set, the scan is entitled by the license instead of the GitHub-OIDC scan token. Provide via a secret."
     required: false
     default: ""
+  arena:
+    description: "Post the public-repo full-scan score to the act101 leaderboard ingest (POST /api/scan/counter). Set arena: false to opt a repo out of the boards (its own score-history chart is still kept). Only fires on pull_request or push to the default branch, for public repos, with a finite published score, and when the GitHub-OIDC scan token path is in use (license-key scans never post)."
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
@@ -71,6 +75,13 @@ runs:
           echo "token_available=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
+
+        # The raw GitHub OIDC JWT is the trust root for the leaderboard ingest
+        # (POST /api/scan/counter re-verifies it via verifyGithubOidc). Retain it
+        # in the env so the post-scan-counter step can present it as the Bearer.
+        # Mask it — a short-lived (≤6m) signed JWT, but still a credential.
+        echo "::add-mask::$oidc_token"
+        echo "ACT_OIDC_TOKEN=$oidc_token" >> "$GITHUB_ENV"
 
         response_file="$(mktemp)"
         status_code="$(curl --silent --show-error --location \
@@ -235,6 +246,17 @@ runs:
           node "$GITHUB_ACTION_PATH/scripts/write-sarif.mjs" act101-report.json act101-results.sarif
           echo "scan_available=true" >> "$GITHUB_OUTPUT"
         fi
+
+    - name: Post act101 leaderboard counter
+      id: counter
+      if: ${{ inputs.arena != 'false' && inputs.license-key == '' && steps.token.outputs.token_available == 'true' && steps.report.outputs.scan_available == 'true' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) }}
+      shell: bash
+      env:
+        ACT_OIDC_TOKEN: ${{ env.ACT_OIDC_TOKEN }}
+        TOKEN_ENDPOINT: ${{ inputs.token-endpoint }}
+      run: |
+        set -euo pipefail
+        node "$GITHUB_ACTION_PATH/scripts/post-scan-counter.mjs"
 
     - name: Attach act101 report artifact
       uses: actions/upload-artifact@v7

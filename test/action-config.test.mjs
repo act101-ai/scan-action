@@ -56,3 +56,35 @@ test("license-key input entitles the scan instead of the OIDC scan token", () =>
   // as ACT_LICENSE_KEY for the CLI gate to consume.
   assert.match(action, /ACT_LICENSE_KEY: \$\{\{ inputs\.license-key \}\}/);
 });
+
+test("arena input defaults on and gates the leaderboard counter step", () => {
+  // An arena input is declared and defaults to "true" (opt-out via arena:false).
+  assert.match(action, /arena:[\s\S]*?default: "true"/);
+  // The raw GitHub OIDC JWT is retained for the counter ingest to re-present
+  // (handleCounter re-verifies it via verifyGithubOidc). License-key scans have
+  // no OIDC path, so the token must be retained inside the OIDC-gated step.
+  assert.match(action, /ACT_OIDC_TOKEN=\$oidc_token/);
+  // A dedicated counter step runs AFTER the report scan.
+  assert.match(action, /name: Post act101 leaderboard counter/);
+  assert.match(action, /scripts\/post-scan-counter\.mjs/);
+  // The step is conditional on ALL of: arena opt-in, OIDC path (no license-key),
+  // token available, report produced, and pull_request OR push to the default branch.
+  assert.match(
+    action,
+    /inputs\.arena != 'false' && inputs\.license-key == '' && steps\.token\.outputs\.token_available == 'true'/,
+  );
+  assert.match(
+    action,
+    /steps\.report\.outputs\.scan_available == 'true'/,
+  );
+  assert.match(
+    action,
+    /github\.event_name == 'pull_request' \|\| \(github\.event_name == 'push' && github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)\)/,
+  );
+  // The counter step never runs before the report (ordering lock).
+  assert.ok(
+    action.indexOf("name: Post act101 leaderboard counter") >
+      action.indexOf("id: report"),
+    "the counter step must come after the report step",
+  );
+});
