@@ -96,6 +96,12 @@ async function main() {
   const overall = report?.score?.overall;
   const scopeMode = report?.scope?.mode;
   const nonBlankLines = report?.scale?.non_blank_lines;
+  // §5.5 difficulty signal: distinct grammars (the "relevant file types"
+  // complexity input to the hidden leaderboard rating). Derived from the scan's
+  // ScaleMetrics.by_language; absent on pre-ScaleMetrics reports.
+  const grammarCount = Array.isArray(report?.scale?.by_language)
+    ? report.scale.by_language.length
+    : undefined;
 
   // Full-repo guard: the report step always runs a full scan, but a future
   // caller could point this at a diff-scoped raw file. Reject it.
@@ -123,6 +129,9 @@ async function main() {
   }
   if (typeof nonBlankLines === "number" && Number.isFinite(nonBlankLines)) {
     payload.non_blank_lines = nonBlankLines;
+  }
+  if (typeof grammarCount === "number" && Number.isFinite(grammarCount)) {
+    payload.grammar_count = grammarCount;
   }
 
   const endpoint = counterEndpoint(process.env.TOKEN_ENDPOINT);

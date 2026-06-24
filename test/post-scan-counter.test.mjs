@@ -98,7 +98,16 @@ function writeScan(workdir, overrides = {}) {
     schema_version: 2,
     score: { overall: 78, security: 80, architecture: 70 },
     findings: [],
-    scale: { total_files: 50, total_lines: 5200, non_blank_lines: 4300, by_language: [] },
+    scale: {
+      total_files: 50,
+      total_lines: 5200,
+      non_blank_lines: 4300,
+      by_language: [
+        { language: "typescript", files: 30, lines: 3000 },
+        { language: "rust", files: 15, lines: 1800 },
+        { language: "python", files: 5, lines: 400 },
+      ],
+    },
     ...overrides,
   };
   fs.writeFileSync(
@@ -160,6 +169,7 @@ test("posts the full-repo published score to the counter endpoint and exits 0", 
     assert.equal(body.security, 80);
     assert.equal(body.architecture, 70);
     assert.equal(body.non_blank_lines, 4300);
+    assert.equal(body.grammar_count, 3); // §5.5: distinct grammars from scale.by_language
   } finally {
     fs.rmSync(workdir, { recursive: true, force: true });
   }
