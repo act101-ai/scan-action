@@ -68,7 +68,8 @@ test("arena input defaults on and gates the leaderboard counter step", () => {
   assert.match(action, /name: Post act101 leaderboard counter/);
   assert.match(action, /scripts\/post-scan-counter\.mjs/);
   // The step is conditional on ALL of: arena opt-in, OIDC path (no license-key),
-  // token available, report produced, and pull_request OR push to the default branch.
+  // token available, report produced, and push to the default branch only
+  // (pull_request runs get a comment + report but do not update the boards).
   assert.match(
     action,
     /inputs\.arena != 'false' && inputs\.license-key == '' && steps\.token\.outputs\.token_available == 'true'/,
@@ -79,7 +80,13 @@ test("arena input defaults on and gates the leaderboard counter step", () => {
   );
   assert.match(
     action,
-    /github\.event_name == 'pull_request' \|\| \(github\.event_name == 'push' && github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)\)/,
+    /github\.event_name == 'push' && github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/,
+  );
+  // pull_request must NOT qualify for the counter — the boards reflect the
+  // default branch only, not WIP pull requests.
+  assert.doesNotMatch(
+    action,
+    /github\.event_name == 'pull_request' \|\| \(github\.event_name == 'push'/,
   );
   // The counter step never runs before the report (ordering lock).
   assert.ok(

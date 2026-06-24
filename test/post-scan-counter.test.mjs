@@ -47,9 +47,10 @@ test("isPublicRepository is true only when the event marks the repo public", () 
   assert.equal(isPublicRepository({}), false);
 });
 
-test("isQualifyingRef accepts pull_request and push to the default branch only", () => {
+test("isQualifyingRef accepts push to the default branch only (not pull_request)", () => {
   const event = { repository: { default_branch: "main" } };
-  assert.equal(isQualifyingRef(event, { GITHUB_EVENT_NAME: "pull_request" }), true);
+  // The leaderboard reflects the default branch, not WIP pull requests.
+  assert.equal(isQualifyingRef(event, { GITHUB_EVENT_NAME: "pull_request" }), false);
   assert.equal(
     isQualifyingRef(event, {
       GITHUB_EVENT_NAME: "push",
@@ -139,8 +140,8 @@ test("posts the full-repo published score to the counter endpoint and exits 0", 
     );
     const result = runScript(workdir, {
       ACT_OIDC_TOKEN: "oidc-jwt-abc",
-      GITHUB_EVENT_NAME: "pull_request",
-      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_PATH: eventPath,
       TOKEN_ENDPOINT: "https://act101.ai/api/scan/token",
       NODE_OPTIONS: `--import ${fileURLToPath(new URL(`file://${shim}`))}`,
@@ -164,6 +165,33 @@ test("posts the full-repo published score to the counter endpoint and exits 0", 
   }
 });
 
+test("does not post on pull_request (leaderboard reflects the default branch only)", () => {
+  const workdir = fs.mkdtempSync(path.join(import.meta.dirname, "tmp-counter-"));
+  try {
+    writeScan(workdir);
+    const eventPath = writeEvent(workdir, {
+      private: false,
+      visibility: "public",
+      default_branch: "main",
+    });
+    const result = runScript(workdir, {
+      ACT_OIDC_TOKEN: "oidc-jwt-abc",
+      GITHUB_EVENT_NAME: "pull_request",
+      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_EVENT_PATH: eventPath,
+      TOKEN_ENDPOINT: "https://act101.ai/api/scan/token",
+    });
+    assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.match(result.stdout, /not a push to the default branch/);
+    assert.ok(
+      !fs.existsSync(path.join(workdir, "posted.json")),
+      "counter must not post on pull_request",
+    );
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("suppresses the POST for a private repository", () => {
   const workdir = fs.mkdtempSync(path.join(import.meta.dirname, "tmp-counter-"));
   try {
@@ -175,8 +203,8 @@ test("suppresses the POST for a private repository", () => {
     });
     const result = runScript(workdir, {
       ACT_OIDC_TOKEN: "oidc-jwt-abc",
-      GITHUB_EVENT_NAME: "pull_request",
-      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_PATH: eventPath,
     });
     assert.equal(result.status, 0);
@@ -198,8 +226,8 @@ test("suppresses the POST for a diff-scoped report (only full-repo enters histor
     });
     const result = runScript(workdir, {
       ACT_OIDC_TOKEN: "oidc-jwt-abc",
-      GITHUB_EVENT_NAME: "pull_request",
-      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_PATH: eventPath,
     });
     assert.equal(result.status, 0);
@@ -221,8 +249,8 @@ test("suppresses the POST when the published score is null", () => {
     });
     const result = runScript(workdir, {
       ACT_OIDC_TOKEN: "oidc-jwt-abc",
-      GITHUB_EVENT_NAME: "pull_request",
-      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_PATH: eventPath,
     });
     assert.equal(result.status, 0);
@@ -244,8 +272,8 @@ test("suppresses the POST when no OIDC token is present (license-key scan)", () 
     });
     const result = runScript(workdir, {
       // ACT_OIDC_TOKEN intentionally absent — a license-key scan has no OIDC.
-      GITHUB_EVENT_NAME: "pull_request",
-      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_PATH: eventPath,
     });
     assert.equal(result.status, 0);

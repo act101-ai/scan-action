@@ -9,7 +9,7 @@
 // Guard conditions (the action.yml `if` already enforces most of these; this
 // script re-checks defensively so a mis-routed manual invocation can't post
 // something the spec forbids):
-//   - pull_request OR push to the default branch
+//   - push to the default branch only (pull_request does not qualify)
 //   - repository is public
 //   - the report scan was full-repo (scope.mode != "diff")
 //   - the published overall score is finite (non-null)
@@ -44,7 +44,8 @@ export function isPublicRepository(event) {
 export function isQualifyingRef(event, env) {
   const eventName = env.GITHUB_EVENT_NAME || event.event_name || "";
   const ref = env.GITHUB_REF || "";
-  if (eventName === "pull_request") return true;
+  // The leaderboard reflects the default branch (canonical scores), not WIP
+  // pull requests, so only a push to the default branch qualifies.
   if (eventName === "push") {
     const defaultBranch =
       event.repository?.default_branch || "main";
@@ -70,7 +71,7 @@ async function main() {
   }
 
   if (!isQualifyingRef(event, process.env)) {
-    console.log("act101 counter skipped: not a pull_request or push to the default branch.");
+    console.log("act101 counter skipped: not a push to the default branch (leaderboard reflects the default branch, not pull requests).");
     return;
   }
 
