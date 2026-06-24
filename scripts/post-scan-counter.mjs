@@ -102,6 +102,15 @@ async function main() {
   const grammarCount = Array.isArray(report?.scale?.by_language)
     ? report.scale.by_language.length
     : undefined;
+  // §7 board language chips: the grammar names from ScaleMetrics.by_language
+  // (already sorted by line count descending). Names only — never paths or code.
+  // Capped; the board shows a few + "+N". Absent on pre-ScaleMetrics reports.
+  const languages = Array.isArray(report?.scale?.by_language)
+    ? report.scale.by_language
+        .map((entry) => entry?.language)
+        .filter((name) => typeof name === "string" && name.length > 0)
+        .slice(0, 16)
+    : undefined;
 
   // Full-repo guard: the report step always runs a full scan, but a future
   // caller could point this at a diff-scoped raw file. Reject it.
@@ -132,6 +141,9 @@ async function main() {
   }
   if (typeof grammarCount === "number" && Number.isFinite(grammarCount)) {
     payload.grammar_count = grammarCount;
+  }
+  if (Array.isArray(languages) && languages.length > 0) {
+    payload.languages = languages;
   }
 
   const endpoint = counterEndpoint(process.env.TOKEN_ENDPOINT);

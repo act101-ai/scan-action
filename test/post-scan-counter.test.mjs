@@ -170,6 +170,7 @@ test("posts the full-repo published score to the counter endpoint and exits 0", 
     assert.equal(body.architecture, 70);
     assert.equal(body.non_blank_lines, 4300);
     assert.equal(body.grammar_count, 3); // §5.5: distinct grammars from scale.by_language
+    assert.deepEqual(body.languages, ["typescript", "rust", "python"]); // §7: chip names from scale.by_language
   } finally {
     fs.rmSync(workdir, { recursive: true, force: true });
   }
