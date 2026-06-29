@@ -87,32 +87,13 @@ runs:
         echo "::add-mask::$oidc_token"
         echo "ACT_OIDC_TOKEN=$oidc_token" >> "$GITHUB_ENV"
 
-        response_file="$(mktemp)"
-        status_code="$(curl --silent --show-error --location \
-          --output "$response_file" \
-          --write-out "%{http_code}" \
-          --request POST \
-          --header "Authorization: Bearer ${oidc_token}" \
-          --header "Content-Type: application/json" \
-          --data '{}' \
-          "${{ inputs.token-endpoint }}")"
-
-        if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-          body="$(cat "$response_file")"
-          echo "::warning::act101 scan token exchange returned HTTP ${status_code}: ${body}"
-          echo "token_available=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        scan_token="$(TOKEN_RESPONSE="$(cat "$response_file")" node -e 'const data = JSON.parse(process.env.TOKEN_RESPONSE); process.stdout.write(data.token || "");')"
-        if [ -n "$scan_token" ]; then
-          echo "::add-mask::$scan_token"
-          echo "token_available=true" >> "$GITHUB_OUTPUT"
-          echo "ACT_SCAN_TOKEN=$scan_token" >> "$GITHUB_ENV"
-        else
-          echo "::warning::act101 token response did not contain a scan token."
-          echo "token_available=false" >> "$GITHUB_OUTPUT"
-        fi
+        # Exchange the OIDC token for a scan JWT. For a private repo with no
+        # active entitlement the first /token call 402s; the script then redeems
+        # the account's one free private-repo scan via /api/scan/claim-free-scan
+        # and retries. It writes ACT_SCAN_TOKEN + token_available itself.
+        OIDC_TOKEN="$oidc_token" \
+        TOKEN_ENDPOINT="${{ inputs.token-endpoint }}" \
+        node "${{ github.action_path }}/scripts/exchange-token.mjs"
 
     - name: Install act CLI
       if: ${{ inputs.install-act == 'true' }}
