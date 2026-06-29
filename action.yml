@@ -101,7 +101,6 @@ runs:
       env:
         ACT_CHANNEL: ${{ inputs.act-channel }}
         ACT_VERSION: ${{ inputs.act-version }}
-        ACT_ACCEPT_TOS: yes
         ACT_ENABLE_DAEMON: no
         ACT_AUTO_START: no
         ACT_INSTALL_CLAUDE_PLUGIN: no
@@ -136,7 +135,6 @@ runs:
         chmod +x "$ACT_PREFIX/act"
         echo "$ACT_PREFIX" >> "$GITHUB_PATH"
         "$ACT_PREFIX/act" --version
-        "$ACT_PREFIX/act" tos accept --yes
 
     - name: Run diff-scoped act101 PR scan
       id: pr-scan

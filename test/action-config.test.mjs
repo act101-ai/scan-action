@@ -21,7 +21,10 @@ test("action installs the latest stable act CLI by default", () => {
   assert.match(action, /export ACT_VERSION/);
   assert.match(action, /tar -xzf "\$archive_path" -C "\$ACT_PREFIX"/);
   assert.match(action, /\$ACT_PREFIX\/act" --version/);
-  assert.match(action, /\$ACT_PREFIX\/act" tos accept --yes/);
+  // The `tos` subcommand was removed from the binary (TOS is docs-only, no
+  // in-binary gate). The action must NOT invoke it — doing so errors with
+  // "unrecognized subcommand 'tos'" (exit 2) and fails the scan.
+  assert.doesNotMatch(action, /\btos\b/);
   assert.match(action, />> "\$GITHUB_PATH"/);
 });
 
