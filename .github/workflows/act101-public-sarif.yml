@@ -22,5 +22,5 @@ jobs:
         uses: act101-ai/scan-action@v2
         with:
           oidc-audience: act101-scan
-          token-endpoint: https://stg.act101.ai/api/scan/token
+          token-endpoint: https://act101.ai/api/scan/token
           upload-sarif: "true"
