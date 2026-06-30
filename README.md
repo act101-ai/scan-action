@@ -9,7 +9,7 @@ permissions:
   pull-requests: write   # sticky/inline PR comments
 
 steps:
-  - uses: act101-ai/scan-action@v1
+  - uses: act101-ai/scan-action@v2
     with:
       oidc-audience: act101-scan
       token-endpoint: https://act101.ai/api/scan/token
