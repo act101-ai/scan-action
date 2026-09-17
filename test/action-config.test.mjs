@@ -61,8 +61,9 @@ test("license-key input entitles the scan instead of the OIDC scan token", () =>
 });
 
 test("arena input defaults on and gates the leaderboard counter step", () => {
-  // An arena input is declared and defaults to "true" (opt-out via arena:false).
+  // An arena input is declared and defaults to "true" but is now deprecated.
   assert.match(action, /arena:[\s\S]*?default: "true"/);
+  assert.match(action, /Deprecated and ignored/);
   // The raw GitHub OIDC JWT is retained for the counter ingest to re-present
   // (handleCounter re-verifies it via verifyGithubOidc). License-key scans have
   // no OIDC path, so the token must be retained inside the OIDC-gated step.
@@ -70,12 +71,13 @@ test("arena input defaults on and gates the leaderboard counter step", () => {
   // A dedicated counter step runs AFTER the report scan.
   assert.match(action, /name: Post act101 leaderboard counter/);
   assert.match(action, /scripts\/post-scan-counter\.mjs/);
-  // The step is conditional on ALL of: arena opt-in, OIDC path (no license-key),
-  // token available, report produced, and push to the default branch only
-  // (pull_request runs get a comment + report but do not update the boards).
+  // The step is conditional on: OIDC path (no license-key), token available,
+  // report produced, and push to the default branch only (pull_request runs
+  // get a comment + report but do not update the boards). Arena input is
+  // deprecated and no longer gates the step.
   assert.match(
     action,
-    /inputs\.arena != 'false' && inputs\.license-key == '' && steps\.token\.outputs\.token_available == 'true'/,
+    /inputs\.license-key == '' && steps\.token\.outputs\.token_available == 'true'/,
   );
   assert.match(
     action,
