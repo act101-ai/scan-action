@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-// A1 Arena post-scan counter (CG3, spec §5.1/§5.2/§5.4).
+// act101 post-scan counter.
 //
 // Reads act101-scan-raw.json and POSTs the published score + counters + scope
-// to the worker leaderboard ingest (POST /api/scan/counter). Best-effort and
+// to the worker scan-counter ingest (POST /api/scan/counter). Best-effort and
 // droppable: any failure logs a ::warning and exits 0 — this step must never
 // fail the check.
 //
+// What the worker does with the post: it increments an aggregate scan counter
+// for every caller, and for a PUBLIC repository it also refreshes that
+// repository's own badge score and appends a row to that repository's own
+// score history. A private repository gets the counter only — no badge, no
+// history row.
+//
 // Guard conditions (the action.yml `if` already enforces most of these; this
 // script re-checks defensively so a mis-routed manual invocation can't post
-// something the spec forbids):
+// something it should not):
 //   - push to the default branch only (pull_request does not qualify)
 //   - repository is public
 //   - the report scan was full-repo (scope.mode != "diff")
@@ -16,9 +22,9 @@
 //   - a GitHub OIDC token is present (the handler re-verifies it; a license-
 //     entitled scan has no OIDC and must not post)
 //
-// Per §5.2 only full-repo published scores enter score_history server-side;
-// diff-scoped PR scans never reach this script. We always send scope:"full"
-// (the report step runs a full scan) plus the arena opt-in flag.
+// Only full-repo published scores enter score_history server-side; diff-scoped
+// PR scans never reach this script. We always send scope:"full" (the report
+// step runs a full scan).
 
 import fs from "node:fs";
 
@@ -44,8 +50,9 @@ export function isPublicRepository(event) {
 export function isQualifyingRef(event, env) {
   const eventName = env.GITHUB_EVENT_NAME || event.event_name || "";
   const ref = env.GITHUB_REF || "";
-  // The leaderboard reflects the default branch (canonical scores), not WIP
-  // pull requests, so only a push to the default branch qualifies.
+  // The badge and the repository's score history track the default branch
+  // (canonical scores), not WIP pull requests, so only a push to the default
+  // branch qualifies.
   if (eventName === "push") {
     const defaultBranch =
       event.repository?.default_branch || "main";
@@ -71,7 +78,7 @@ async function main() {
   }
 
   if (!isQualifyingRef(event, process.env)) {
-    console.log("act101 counter skipped: not a push to the default branch (leaderboard reflects the default branch, not pull requests).");
+    console.log("act101 counter skipped: not a push to the default branch (the badge and score history track the default branch, not pull requests).");
     return;
   }
 
@@ -96,15 +103,17 @@ async function main() {
   const overall = report?.score?.overall;
   const scopeMode = report?.scope?.mode;
   const nonBlankLines = report?.scale?.non_blank_lines;
-  // §5.5 difficulty signal: distinct grammars (the "relevant file types"
-  // complexity input to the hidden leaderboard rating). Derived from the scan's
-  // ScaleMetrics.by_language; absent on pre-ScaleMetrics reports.
+  // Difficulty signal: the number of distinct grammars in the scan, recorded
+  // with the score so the repository's own history carries how much ground the
+  // score covered. Derived from the scan's ScaleMetrics.by_language; absent on
+  // pre-ScaleMetrics reports.
   const grammarCount = Array.isArray(report?.scale?.by_language)
     ? report.scale.by_language.length
     : undefined;
-  // §7 board language chips: the grammar names from ScaleMetrics.by_language
-  // (already sorted by line count descending). Names only — never paths or code.
-  // Capped; the board shows a few + "+N". Absent on pre-ScaleMetrics reports.
+  // The grammar names from ScaleMetrics.by_language (already sorted by line
+  // count descending), stored alongside the repository's score history. Names
+  // only — never paths or code. Capped at 16; the worker caps it again on
+  // ingest. Absent on pre-ScaleMetrics reports.
   const languages = Array.isArray(report?.scale?.by_language)
     ? report.scale.by_language
         .map((entry) => entry?.language)
@@ -127,7 +136,6 @@ async function main() {
   const payload = {
     score: overall,
     scope: "full",
-    arena: true,
     bucket: "scans_total",
   };
   if (typeof report?.score?.security === "number" && Number.isFinite(report.score.security)) {

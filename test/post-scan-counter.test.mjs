@@ -49,7 +49,7 @@ test("isPublicRepository is true only when the event marks the repo public", () 
 
 test("isQualifyingRef accepts push to the default branch only (not pull_request)", () => {
   const event = { repository: { default_branch: "main" } };
-  // The leaderboard reflects the default branch, not WIP pull requests.
+  // The badge and score history reflect the default branch, not WIP pull requests.
   assert.equal(isQualifyingRef(event, { GITHUB_EVENT_NAME: "pull_request" }), false);
   assert.equal(
     isQualifyingRef(event, {
@@ -164,19 +164,20 @@ test("posts the full-repo published score to the counter endpoint and exits 0", 
     const body = JSON.parse(posted.body);
     assert.equal(body.score, 78);
     assert.equal(body.scope, "full");
-    assert.equal(body.arena, true);
     assert.equal(body.bucket, "scans_total");
+    // The worker deleted ScanIngestInput.arena — the field must not be sent.
+    assert.ok(!("arena" in body), "the removed arena field must not be posted");
     assert.equal(body.security, 80);
     assert.equal(body.architecture, 70);
     assert.equal(body.non_blank_lines, 4300);
-    assert.equal(body.grammar_count, 3); // §5.5: distinct grammars from scale.by_language
-    assert.deepEqual(body.languages, ["typescript", "rust", "python"]); // §7: chip names from scale.by_language
+    assert.equal(body.grammar_count, 3); // distinct grammars from scale.by_language
+    assert.deepEqual(body.languages, ["typescript", "rust", "python"]); // grammar names from scale.by_language
   } finally {
     fs.rmSync(workdir, { recursive: true, force: true });
   }
 });
 
-test("does not post on pull_request (leaderboard reflects the default branch only)", () => {
+test("does not post on pull_request (badge and score history reflect the default branch only)", () => {
   const workdir = fs.mkdtempSync(path.join(import.meta.dirname, "tmp-counter-"));
   try {
     writeScan(workdir);

@@ -60,22 +60,27 @@ test("license-key input entitles the scan instead of the OIDC scan token", () =>
   assert.match(action, /ACT_LICENSE_KEY: \$\{\{ inputs\.license-key \}\}/);
 });
 
-test("arena input defaults on and gates the leaderboard counter step", () => {
-  // An arena input is declared and defaults to "true" (opt-out via arena:false).
+test("arena input is declared and deprecated; no longer gates the scan counter step", () => {
+  // An arena input is declared and defaults to "true" but is now deprecated.
   assert.match(action, /arena:[\s\S]*?default: "true"/);
+  assert.ok(action.includes("Deprecated and ignored; accepted so existing workflows keep validating, and will be deleted in v3."));
+  // The description must state the behaviour change: arena: false no longer
+  // suppresses the POST, so such repositories resume posting scan counters.
+  assert.ok(action.includes("resumes posting scan counters on its next default-branch push"));
   // The raw GitHub OIDC JWT is retained for the counter ingest to re-present
   // (handleCounter re-verifies it via verifyGithubOidc). License-key scans have
   // no OIDC path, so the token must be retained inside the OIDC-gated step.
   assert.match(action, /ACT_OIDC_TOKEN=\$oidc_token/);
   // A dedicated counter step runs AFTER the report scan.
-  assert.match(action, /name: Post act101 leaderboard counter/);
+  assert.match(action, /name: Post act101 scan counter/);
   assert.match(action, /scripts\/post-scan-counter\.mjs/);
-  // The step is conditional on ALL of: arena opt-in, OIDC path (no license-key),
-  // token available, report produced, and push to the default branch only
-  // (pull_request runs get a comment + report but do not update the boards).
+  // The step is conditional on: OIDC path (no license-key), token available,
+  // report produced, and push to the default branch only (pull_request runs
+  // get a comment + report but do not update the badge or the repository's
+  // score history). Arena input is deprecated and no longer gates the step.
   assert.match(
     action,
-    /inputs\.arena != 'false' && inputs\.license-key == '' && steps\.token\.outputs\.token_available == 'true'/,
+    /inputs\.license-key == '' && steps\.token\.outputs\.token_available == 'true'/,
   );
   assert.match(
     action,
@@ -85,15 +90,15 @@ test("arena input defaults on and gates the leaderboard counter step", () => {
     action,
     /github\.event_name == 'push' && github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/,
   );
-  // pull_request must NOT qualify for the counter — the boards reflect the
-  // default branch only, not WIP pull requests.
+  // pull_request must NOT qualify for the counter — the badge and score
+  // history reflect the default branch only, not WIP pull requests.
   assert.doesNotMatch(
     action,
     /github\.event_name == 'pull_request' \|\| \(github\.event_name == 'push'/,
   );
   // The counter step never runs before the report (ordering lock).
   assert.ok(
-    action.indexOf("name: Post act101 leaderboard counter") >
+    action.indexOf("name: Post act101 scan counter") >
       action.indexOf("id: report"),
     "the counter step must come after the report step",
   );
