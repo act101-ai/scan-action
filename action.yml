@@ -44,7 +44,7 @@ inputs:
     required: false
     default: ""
   arena:
-    description: "Deprecated and ignored. The act101 leaderboard is removed; this input is accepted so existing workflows keep validating, and will be deleted in v3."
+    description: "Deprecated and ignored; accepted so existing workflows keep validating, and will be deleted in v3. Behaviour change: this input used to suppress the scan-counter POST entirely, so a repository that set arena: false resumes posting scan counters on its next default-branch push — and, if the repository is public, a badge score and score-history rows with them; the remaining ways to opt out are to not run this action on default-branch pushes, or to run it with license-key set (a license-entitled scan has no OIDC and never posts)."
     required: false
     default: "true"
   gate-fail-on:
@@ -80,7 +80,7 @@ runs:
           exit 0
         fi
 
-        # The raw GitHub OIDC JWT is the trust root for the leaderboard ingest
+        # The raw GitHub OIDC JWT is the trust root for the scan-counter ingest
         # (POST /api/scan/counter re-verifies it via verifyGithubOidc). Retain it
         # in the env so the post-scan-counter step can present it as the Bearer.
         # Mask it — a short-lived (≤6m) signed JWT, but still a credential.
@@ -230,7 +230,7 @@ runs:
           echo "scan_available=true" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Post act101 leaderboard counter
+    - name: Post act101 scan counter
       id: counter
       if: ${{ inputs.license-key == '' && steps.token.outputs.token_available == 'true' && steps.report.outputs.scan_available == 'true' && (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
       shell: bash
