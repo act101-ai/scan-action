@@ -60,10 +60,10 @@ test("license-key input entitles the scan instead of the OIDC scan token", () =>
   assert.match(action, /ACT_LICENSE_KEY: \$\{\{ inputs\.license-key \}\}/);
 });
 
-test("arena input defaults on and gates the leaderboard counter step", () => {
+test("arena input is declared and deprecated; no longer gates the leaderboard counter step", () => {
   // An arena input is declared and defaults to "true" but is now deprecated.
   assert.match(action, /arena:[\s\S]*?default: "true"/);
-  assert.match(action, /Deprecated and ignored/);
+  assert.ok(action.includes("Deprecated and ignored. The act101 leaderboard is removed; this input is accepted so existing workflows keep validating, and will be deleted in v3."));
   // The raw GitHub OIDC JWT is retained for the counter ingest to re-present
   // (handleCounter re-verifies it via verifyGithubOidc). License-key scans have
   // no OIDC path, so the token must be retained inside the OIDC-gated step.
